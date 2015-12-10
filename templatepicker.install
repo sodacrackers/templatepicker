@@ -1,0 +1,46 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the template picker module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function templatepicker_schema() {
+
+	$schema = array();
+	$schema['templatepicker'] = array(
+		'description' => 'Information about nodes invoking page-template picker templates.',
+		'fields' => array(
+			'nid' => array(
+				'type' => 'int',
+				'unsigned' => TRUE,
+				'not null' => TRUE,
+				'default' => 0,
+				'description' => "The node's {node}.nid.",
+			),
+			'template' => array(
+				'type' => 'varchar',
+				'length' => 255,
+				'not null' => TRUE,
+				'default' => '',
+			),
+		),
+		'primary key' => array('nid'),
+	);
+
+	return $schema;
+}
+
+
+/**
+ * Implements hook_update_N().
+ */
+function templatepicker_update_7000() {
+
+	drupal_install_schema('templatepicker');
+
+}
+

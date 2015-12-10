@@ -1,0 +1,230 @@
+<?php
+/**
+ * @file
+ * 
+ * Speech and Hearing custom module. 
+ * 
+ * Enables choosing a particular template when editing a node. 
+ * An alternative if your site needs theming for the whole page, 
+ * rather than setting a per-node template.  
+ * 
+ * @link: https://www.drupal.org/coding-standards/docs
+ * @link: https://www.drupal.org/project/template_picker
+ * @link: https://www.drupal.org/sandbox/Demoshane/2005030
+ * 
+ */
+
+
+
+function templatepicker_permission() {
+
+	$node_types = node_permissions_get_configured_types() ; 
+
+	foreach ($node_types as $type) {
+
+		$info = node_type_get_type($type);
+		$type = check_plain($info->type);
+
+		$permissions["allow users to pick $type page-templates"] = array(
+			'title' => t('%type_name: Enable choosing per-page templates', array('%type_name' => $info->name)),
+		);
+		
+	}
+	return $permissions;
+
+}
+
+
+
+function templatepicker_form_node_form_alter(&$form, &$form_state, $form_id) {
+
+
+	$allowed = user_access("allow users to pick ". $form['#node']->type ." page-templates");
+	if (!$allowed) {
+		return; 
+	}
+
+	$nid = $form['nid']['#value'];
+	if ($nid) {
+
+		$prepopulated_option = db_select('templatepicker', 'tp')
+			->condition('nid', $nid)
+			->fields('tp', array('template'))
+			->execute()
+			->fetchAssoc();
+	}
+	else {
+		$prepopulated_option = 0;
+	}
+
+
+	$form['templatepicker'] = array(
+		'#type' => 'fieldset',
+		'#title' => t('Page-template Picker'),
+		'#access' => $access,
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+		'#group' => 'additional_settings',
+		'#weight' => 0,
+		'#tree' => TRUE,
+		'#attributes' => array(
+			'class' => array('tp-form'),
+		),
+		// '#attached' => array(
+		// 	'js' => array(
+		// 		drupal_get_path('module', 'templatepicker') . '/templatepicker.js',
+		// 	),
+		// ),
+	);
+
+	// Add a select box inside the template picker fieldset.
+	$form['templatepicker']['template'] = array(
+		'#type' => 'select',
+		'#title' => t('Template'),
+		'#description' => t('Select a page-template to use for this content.'),
+		'#options' => $templates,
+		'#default_value' => $prepopulated_option,
+	);
+
+	// Add a submit handler to the 'Save' button of our form.
+	//
+	// I'm concerned that it wouldn't run if new buttons were added to the form
+	// (like in the Publish Button module drupal.org/project/publish_button).
+	// Alternatively, I can add the handler to $form['#submit'] but then it
+	// runs on both the 'Save' button and 'Preview' button, (according to my
+	// tests). I may come back to see if there is a better way to do this.
+	//
+	$form['actions']['submit']['#submit'][] = 'templatepicker_form_submit';
+	
+}
+
+
+function templatepicker_form_submit($form, &$form_state) {
+
+
+	// Find the relevant submit information 
+	$template = $form_state['values']['templatepicker']['template'];
+
+	// The value of $nid is accessible even if the node is new because our submit
+	// handler runs after node_form_submit();
+	$nid = $form_state['nid'];
+
+	// First query our table and see if the nid exists in the database.
+	// SELECT COUNT FROM templatepicker WHERE nid = $nid;
+	$query = db_select('templatepicker', 'tp')
+		->condition('nid', $nid);
+	$query->addExpression('COUNT (nid)', 'node_count');
+
+	$results = $query->execute();
+	$data = $results->fetchObject();
+
+	// Find our count and cast it as a boolean.
+	$nid_exists = (boolean) $data->node_count;
+
+	// Update the database with page-template picker information.
+	if ($template !== 'default') {
+		if ($nid_exists) {
+			// The nid exists in the database table, so update the record.
+			// UPDATE templatepicker SET template = $template WHERE nid = $nid;
+			$num_updated = db_update('templatepicker')
+				->fields(array(
+					'template' => $template,
+				))
+				->condition('nid', $nid)
+				->execute();
+		}
+		else {
+			// The nid is not in the table. Let's add it.
+			// INSERT INTO templatepicker (nid, template) VALUES ($nid, $template);
+			$num_inserted = db_insert('templatepicker')
+				->fields(array(
+					'nid' => $nid,
+					'template' => $template,
+			))
+			->execute();
+		}
+	}
+	else {
+		// The user picked the 'default' template.
+		if ($nid_exists) {
+			// The nid exists in the database table, so we'll delete it.
+			// DELETE FROM templatepicker WHERE nid = $nid;
+			$num_deleted = db_delete('templatepicker')
+				->condition('nid', $nid)
+				->execute();
+		}
+		else {
+			// Do nothing, so we don't override Drupal's default templates.
+		}
+	}
+	
+}
+
+
+function templatepicker_preprocess_page(&$variables) {
+
+	$templates = _templatepicker_get_templates(); 
+
+	$nid = arg(1);
+	$result = db_select('templatepicker', 'tp')
+		->condition('nid', $nid)
+		->fields('tp', array('template'))
+		->execute()
+		->fetchAssoc();
+
+	if ($result['template']) {
+		// Drupal likes these in the form "page__node_type_customxyz" 
+		$variables['theme_hook_suggestions'][] = str_replace('-', '_', basename($result['template'], '.tpl.php'));
+	}
+
+
+// $variables['theme_hook_suggestions'][] = 'page__1_col_sphsc_logos_plain_page';
+// $variables['theme_hook_suggestions'][] = 'page__1_col_uw_logos_plain_page';
+// $variables['theme_hook_suggestions'][] = 'page__3_col_sphsc_logos_plain_page';
+// $variables['theme_hook_suggestions'][] = 'page__3_col_uw_logos_plain_page';
+// $variables['theme_hook_suggestions'][] = 'page__plain_page';
+
+
+}
+
+function _templatepicker_get_templates() {
+
+	$page_templates = array('default' => t('Default page template'));
+
+	$theme_path = DRUPAL_ROOT . '/' . drupal_get_path('theme', variable_get('theme_default'));
+	$directory = new RecursiveDirectoryIterator($theme_path);
+	$iterator = new RecursiveIteratorIterator($directory);
+
+	// Detect templates in your theme like "page--content_type.tpl.php" 
+	$regex_iterator = new RegexIterator($iterator, '/page.?\.tpl\.php$/i', RecursiveRegexIterator::GET_MATCH);
+	$templates_found = iterator_to_array($regex_iterator, TRUE);
+
+
+	foreach ($templates_found as $key => $array) 
+	{
+
+		// Add found templates to our list of template-picker options 
+		$filename = basename($key); 
+		$templates[$filename] = $filename; 
+
+		if (is_file($key)) {
+
+			// Search for friendly name in comments, in the form 
+			// Template name: Template 22
+			$file_contents = implode('', file($key));
+			
+			if (preg_match('/(?:Template Name:)(.*)$/mi', $file_contents, $result)) {
+				$clean_name = trim($result[1]);
+			}
+			else {
+				$clean_name = strtoupper(str_replace(array('-', '_', '.tpl.php'), ' ', $filename));
+			}
+
+			$page_templates[$filename] = $clean_name;
+
+		}
+	}
+
+	return $page_templates; 
+
+}

@@ -1,0 +1,4 @@
+name = Template-Picker 
+description = Allows editors to set a different page-template on any node.  
+core = 7.x
+dependencies[] = node
