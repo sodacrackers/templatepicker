@@ -12,7 +12,7 @@ function templatepicker_schema() {
 
 	$schema = array();
 	$schema['templatepicker'] = array(
-		'description' => 'Information about nodes invoking page-template picker templates.',
+		'description' => 'Information about nodes invoking templatepicker page templates.',
 		'fields' => array(
 			'nid' => array(
 				'type' => 'int',
@@ -20,6 +20,12 @@ function templatepicker_schema() {
 				'not null' => TRUE,
 				'default' => 0,
 				'description' => "The node's {node}.nid.",
+			),
+			'type' => array(
+				'type' => 'varchar',
+				'length' => 255,
+				'not null' => TRUE,
+				'default' => '',
 			),
 			'template' => array(
 				'type' => 'varchar',
